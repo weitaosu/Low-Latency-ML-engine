@@ -1,0 +1,2 @@
+add_executable(stage4b_int8_perchannel main.cpp engine.cpp)
+target_link_libraries(stage4b_int8_perchannel PRIVATE common)

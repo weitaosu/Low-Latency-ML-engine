@@ -1,0 +1,43 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+.Python
+*.egg-info/
+
+# C++ build
+cpp/build/
+*.o
+*.a
+*.obj
+
+# LaTeX build artifacts
+paper/REPORT.log
+paper/REPORT.blg
+paper/REPORT.aux
+paper/REPORT.out
+paper/REPORT.toc
+paper/REPORT.bbl
+paper/*.synctex.gz
+
+# Editor / OS
+.~lock.*#
+.DS_Store
+*.swp
+*~
+.vscode/
+.idea/
+
+# Data we don't ship (but keep in repo for reproducibility)
+# (uncomment if you want to exclude these)
+# data/inputs_test.npy
+# data/calib_5k.npy
+
+# Temporary
+*.tmp
+*.bak
+
+# Internal instruction / planning docs (kept on disk, not committed)
+.claude/
+PROJECT_GUIDE.md
+decisions.md

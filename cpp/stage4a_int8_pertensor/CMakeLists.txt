@@ -1,0 +1,2 @@
+add_executable(stage4a_int8_pertensor main.cpp engine.cpp)
+target_link_libraries(stage4a_int8_pertensor PRIVATE common)
