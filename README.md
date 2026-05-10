@@ -4,18 +4,19 @@ Final project for **Advanced ML Systems**, 2026. Author: Weitao Su (`ws535@corne
 
 A six-stage ablation of a hand-coded C++ inference engine for an encoder-only Transformer on the ETTh1 time-series dataset, designed to attribute every increment of P99 tail-latency reduction to a single, named optimization (preallocation, fusion, cache tiling, INT8 quantization, AVX2 SIMD).
 
-The full writeup is at [`paper/REPORT.pdf`](paper/REPORT.pdf) (LaTeX source in [`paper/REPORT.tex`](paper/REPORT.tex)).
+The full writeup is at [`paper/REPORT.pdf`](paper/REPORT.pdf).
 
 ## Headline result
 
 Cumulative speedup vs naive Stage 0 at P99, after 100,000 measurement iterations on a kernel-isolated CPU core (Intel Alder Lake P-core, turbo off, swap off):
 
-| | small (365K params) | medium (1.9M params) |
-|---|---|---|
-| Stage 0 (naive FP32) | 27.68 ms | 85.56 ms |
-| Stage 5 (AVX2 FP32 SIMD) | **5.11 ms** | **24.54 ms** |
-| Cumulative speedup | **5.42×** | **3.49×** |
-| ONNX Runtime (reference) | 3.89 ms | 10.69 ms |
+
+|                          | small (365K params) | medium (1.9M params) |
+| ------------------------ | ------------------- | -------------------- |
+| Stage 0 (naive FP32)     | 27.68 ms            | 85.56 ms             |
+| Stage 5 (AVX2 FP32 SIMD) | **5.11 ms**         | **24.54 ms**         |
+| Cumulative speedup       | **5.42×**          | **3.49×**           |
+| ONNX Runtime (reference) | 3.89 ms             | 10.69 ms             |
 
 The headline finding is the *overhead-versus-compute crossover*: preallocation (Stage 1) reduces small-model P99 by 2.18× but does nothing on medium, while cache tiling (Stage 3) shows the inverse pattern (−2.7% small, +10.5% medium). See `paper/REPORT.pdf` Section 4 for the complete six-stage table and interpretation.
 
@@ -24,8 +25,6 @@ The headline finding is the *overhead-versus-compute crossover*: preallocation (
 ```
 low_latency_ml/
 ├── README.md                            (this file)
-├── PROJECT_GUIDE.md                     (methodology / step-by-step playbook)
-├── decisions.md                         (engineering-decisions log)
 │
 ├── paper/                               (final report)
 │   ├── REPORT.pdf                       ← the deliverable
@@ -192,6 +191,6 @@ Every numeric claim in `paper/REPORT.pdf` traces to a CSV in `results/csvs/` plu
 - **Single dataset** (ETTh1)
 - **Single machine** (Intel Alder Lake P-core with AVX-VNNI)
 - **Stage 5 INT8 SIMD not implemented**: VNNI scaffold left for follow-up
-- **Rust port not delivered**: scope-cut; documented in `decisions.md`
+- **Rust port not delivered**: scope-cut; see `paper/REPORT.pdf` Section 6
 
 See `paper/REPORT.pdf` Section 6 for the full discussion.
