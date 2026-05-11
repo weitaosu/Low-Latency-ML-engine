@@ -498,34 +498,40 @@ The $11\times$ gap closure tracks cleanly to identifiable mechanisms: Stage~1 el
 
 The remaining $1.31\times$/$2.30\times$ to ORT reflects engineering investment we did not match: ORT's MLAS uses larger register-tile microkernels with more accumulators, per-($M, K, N$)-shape autotuned blocking, and (for INT8 paths) AVX-VNNI dispatch.
 
+\section{Impact}
+\label{sec:impact}
+
+\paragraph{Deployment guidance.}
+Three actionable recommendations follow directly from the ablation.
+(1)~\textbf{Preallocate first.}~For any latency-sensitive deployment of a sub-million-parameter model, a single contiguous activation pool ($\approx$50 lines of C++) recovers $2.18\times$ P99 with zero accuracy risk, and every subsequent optimization should be measured against the preallocated baseline rather than the naive one.
+(2)~\textbf{Per-channel INT8 is the production default} for this class of workload: it preserves test MSE within $0.06\%$ of FP32 (two orders of magnitude inside the conventional $5\%$ threshold) while delivering an $\approx$$4\times$ small-model and $\approx$$2.5\times$ medium-model speedup over scalar tiled FP32, and its P99--P50 gap is tighter than its per-tensor counterpart.
+(3)~\textbf{Sub-millisecond P99.9 SLOs require leaving Python.}~Every Python-resident baseline (PyTorch eager, TorchScript, ONNX Runtime via its Python binding, NumPy) shows a 3~ms P99--P50 tail on small driven by cyclic garbage collection and binding-layer object allocation; the rig's noise floor is 17~ns, so this is not OS jitter and will not close by changing models.
+
+\paragraph{Methodology transfer.}
+Two observations generalize beyond Transformer inference to any tail-latency study.
+First, \textbf{at least 10{,}000 iterations per configuration} should be regarded as a practical floor for any study claiming P99 numbers; our 500-iteration pilot underestimated the P99--P50 gap by $540\times$ relative to the 100K-iteration ground truth.
+Second, \textbf{the rig state belongs inside the data, not the methods section}: recording \texttt{isolcpus}, \texttt{no\_turbo}, and \texttt{perf\_paranoia} in every CSV header makes any anomaly traceable, and lets a future reader detect a compromised measurement without re-running.
+
+\paragraph{Conceptual.}
+The most counterintuitive finding is that \textbf{scalar INT8 quantization helps medium models more than small models} ($2.22\times$ vs $1.88\times$ speedup over scalar tiled FP32), which inverts the common assumption that quantization is a ``small-model trick.''
+The mechanism is L1/L2 cache fit, not arithmetic: when the FP32 working set fits in L1, INT8 saves no traffic; when it spills to L2 or DRAM, the $4\times$ working-set reduction is what buys the speedup.
+This reframes how a practitioner should reach for quantization: not as a fallback when a model is too slow, but as a deliberate intervention when the FP32 working set crosses a cache boundary.
+
 \section{Limitations}
 \label{sec:limitations}
 
-\paragraph{Scope.}
-All measurements are on a single CPU (Intel Alder Lake P-core with AVX-VNNI), at batch size 1, without KV cache, on an encoder-only architecture at a single sequence length of 96.
-Latency conclusions transfer cleanly to any deployment with the same tensor shapes and a similar cache hierarchy, but absolute numbers will differ on AMD Zen, ARM, or pre-Alder-Lake Intel hardware.
+All measurements are on a single CPU (Intel Alder Lake P-core with AVX-VNNI), at batch size 1, without KV cache, on an encoder-only architecture at sequence length 96; absolute numbers will differ on AMD Zen, ARM, or pre-Alder-Lake Intel, though stage-to-stage \emph{ratios} should remain stable.
+Accuracy is evaluated on ETTh1 only, so quantization MSE drift is not characterized on other distributions.
+The size-dependent crossover is identified from two model scales (260K and 1.9M parameters), not a sweep: a transition exists somewhere in this interval, but two points do not pin its location.
+Test MSE 0.874/0.905 reflects the published vanilla-Transformer ceiling on ETTh1 (Informer at 0.941~\citep{nie2023patchtst}), not an implementation defect; the latency findings are independent of forecasting accuracy.
+Finally, bootstrap CIs assume sample independence, but adjacent iterations have short-range serial correlation from L2 and TLB warm-up; the CIs lean conservative and should not be used to claim significance for sub-microsecond deltas.
 
-\paragraph{Single dataset.}
-All accuracy claims are evaluated on ETTh1 only.
-The latency claims are dataset-independent (they are functions of model shape, not data distribution), but quantization MSE drift is not, and we do not characterize it on other distributions.
+\section{Future Work}
+\label{sec:future}
 
-\paragraph{Stage 5 INT8 SIMD not implemented.}
-This was the natural next stage and is the most plausible path to closing the gap to ONNX Runtime on the medium model.
-The non-VNNI implementation path requires \texttt{\_mm256\_maddubs\_epi16} chained with \texttt{\_mm256\_madd\_epi16} per $K$-block, while the VNNI path collapses to a single \texttt{\_mm256\_dpbusd\_avx\_epi32} per four-$K$-element step.
-Correctness verification is more delicate than scalar INT8 because lane-mixing during the horizontal-sum reduction creates many opportunities for off-by-one mistakes that pass scalar-equivalent smoke tests but fail on real workloads.
-We did not attempt the implementation here.
-
-\paragraph{Rust port not delivered.}
-A Rust port was scoped early as a comparison point.
-The original motivation came from cross-language energy-efficiency studies that consistently rank C, C++, and Rust as the most efficient languages~\citep{pereira2021ranking}; the question of whether Rust's safety model adds measurable single-call latency overhead remains an open side-experiment.
-
-\paragraph{Model under-fits ETTh1.}
-Test MSE 0.874 (small) and 0.905 (medium) versus the published best of 0.376 for FEDformer.
-This is the published vanilla-Transformer ceiling on ETTh1 (Informer at 0.941~\citep{nie2023patchtst}); the latency findings are independent of forecasting accuracy.
-
-\paragraph{Statistical caveats.}
-Bootstrap confidence intervals assume sample independence, but adjacent iterations in our 100{,}000-sample runs are not strictly independent: there is short-range serial correlation from L2 and TLB warm-up effects.
-The CIs are therefore a conservative-leaning estimate of the truth, and their tightness should not be over-interpreted to claim significance for sub-microsecond stage-to-stage deltas.
+The most plausible path to closing the remaining $2.30\times$ gap to ORT on medium is \textbf{Stage~5 INT8 SIMD} (VNNI \texttt{\_mm256\_dpbusd\_avx\_epi32} or the non-VNNI \texttt{\_mm256\_maddubs\_epi16} + \texttt{\_mm256\_madd\_epi16} chain).
+A follow-on pass should also add \textbf{\texttt{perf stat} hardware-counter} data per stage, converting the bandwidth-not-arithmetic claim from inference to measurement, and replicate the ablation at \textbf{5--6 intermediate model sizes} so the cache-fit crossover is a curve rather than a two-point transition.
+Beyond this, the natural extensions are \textbf{cross-platform replication} (AMD Zen, ARM Neon, Apple Silicon), \textbf{batched inference and longer sequences} (where fused attention~\citep{dao2022flashattention} starts to matter), a \textbf{Rust port} for the latency/energy comparison motivated by~\citet{pereira2021ranking}, and \textbf{head-to-head with MLAS, TVM, and OpenVINO} to isolate which fraction of the ORT gap is library-quality versus framework-overhead.
 
 \section{Conclusion}
 \label{sec:conclusion}
